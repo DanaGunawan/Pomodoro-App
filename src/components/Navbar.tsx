@@ -3,10 +3,12 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { LogOut, Moon, Sun, LogIn } from 'lucide-react'
+import type { User } from '@supabase/supabase-js' // ✅ Import type
+
 
 export default function Navbar() {
   const [darkMode, setDarkMode] = useState(true)
-  const [user, setUser] = useState<any>(null)
+const [user, setUser] = useState<User | null>(null)
 
   // Toggle dark mode
   useEffect(() => {

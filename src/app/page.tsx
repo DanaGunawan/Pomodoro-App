@@ -2,9 +2,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { format } from 'date-fns'
 import { Play, Pause, RotateCcw } from 'lucide-react'
-import Navbar from '@/components/Navbar'
 
 export default function HomePage() {
   const [isRunning, setIsRunning] = useState(false)
@@ -57,7 +55,7 @@ export default function HomePage() {
       }
     }
     saveSession()
-  }, [endTime])
+  }, [startTime,endTime])
 
   return (
     <div className="glass mt-10 p-8 text-center">

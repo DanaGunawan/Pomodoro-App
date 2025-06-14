@@ -1,4 +1,4 @@
-# ⏱️ Pomodoro-App
+# ⏱️ Pomodoro-App DanaGunawan
 
 A modern Pomodoro Timer built using **Next.js**, **TailwindCSS**, and **Supabase**. This app helps you stay focused and productive using the Pomodoro Technique, featuring user authentication, dark mode, analytics, and a leaderboard — all styled with a clean Web3-inspired glassmorphism UI.
 
