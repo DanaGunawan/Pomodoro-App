@@ -32,3 +32,6 @@ body {
   }
 }
 
+.btn {
+  @apply p-3 rounded-full hover:opacity-90 text-white;
+}
