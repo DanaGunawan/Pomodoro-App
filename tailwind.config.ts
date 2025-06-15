@@ -8,6 +8,11 @@ const config: Config = {
   ],
   theme: {
     extend: {},
+      screens: {
+      sm: '640px',
+      md: '768px', // used for hiding/showing mobile/desktop menus
+      lg: '1024px',
+    },
   },
   plugins: [],
 }
