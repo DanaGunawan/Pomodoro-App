@@ -180,36 +180,39 @@ export const TimerProvider = ({ children }: { children: React.ReactNode }) => {
     return () => clearInterval(interval);
   }, [isRunning, sessionType, tasks, userId]);
 
-  useEffect(() => {
-    const save = async () => {
-      if (startTime && endTime && userId) {
-        await supabase.from("pomodoro_sessions").insert({
-          user_id: userId,
-          start_time: startTime.toISOString(),
-          end_time: endTime.toISOString(),
-          type: sessionType,
-        });
+ useEffect(() => {
+  const save = async () => {
+    if (startTime && endTime && userId) {
+      await supabase.from("pomodoro_sessions").insert({
+        user_id: userId,
+        start_time: startTime.toISOString(),
+        end_time: endTime.toISOString(),
+        type: sessionType,
+      });
 
-        const next =
-          sessionType === "focus"
-            ? (focusCount + 1) % longBreakInterval === 0
-              ? "long_break"
-              : "short_break"
-            : "focus";
+      const nextSession =
+        sessionType === "focus"
+          ? (focusCount + 1) % longBreakInterval === 0
+            ? "long_break"
+            : "short_break"
+          : "focus";
 
-        if (sessionType === "focus") {
-          setFocusCount((count) => count + 1);
-        }
-
-        setSessionType(next);
-        setTimeLeft(durations[next]);
-        setStartTime(null);
-        setEndTime(null);
-        localStorage.removeItem("pomodoro_state");
+      if (sessionType === "focus") {
+        setFocusCount((count) => count + 1);
       }
-    };
+
+      setSessionType(nextSession);
+      setTimeLeft(durations[nextSession]);
+      setStartTime(null);
+      setEndTime(null);
+      localStorage.removeItem("pomodoro_state");
+    }
+  };
+
+  if (endTime) {
     save();
-  }, [endTime]);
+  }
+}, [endTime, startTime, userId, sessionType, focusCount, longBreakInterval, durations]);
 
   const startTimer = () => {
     if (!isRunning) {

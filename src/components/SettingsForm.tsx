@@ -8,6 +8,8 @@ interface Props {
   onClose: () => void;
 }
 
+type SettingValue = boolean | number;
+
 export default function SettingsForm({ onClose }: Props) {
   const [focusDuration, setFocusDuration] = useState(25);
   const [shortBreak, setShortBreak] = useState(5);
@@ -22,11 +24,9 @@ export default function SettingsForm({ onClose }: Props) {
     durations,
     sessionType,
     setTimeLeft,
-    longBreakInterval: contextLongBreakInterval,
     setLongBreakInterval,
   } = useTimer();
 
-  // Load settings on mount
   useEffect(() => {
     const loadSettings = async () => {
       const user = (await supabase.auth.getUser()).data.user;
@@ -65,9 +65,9 @@ export default function SettingsForm({ onClose }: Props) {
       }
     };
     loadSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Handle duration input changes, update supabase + context + timer if active session type
   const handleChangeDuration = async (
     type: "focus_duration" | "short_break_duration" | "long_break_duration",
     value: number
@@ -96,14 +96,13 @@ export default function SettingsForm({ onClose }: Props) {
     }
   };
 
-  // Handle other settings (auto-start, long break interval)
-  const handleChangeOther = async (field: string, value: any) => {
+  const handleChangeOther = async (field: string, value: SettingValue) => {
     if (!userId) return;
     await supabase.from("user_settings").update({ [field]: value }).eq("id", userId);
 
     if (field === "long_break_interval") {
-      setLongBreakInterval(value);
-      setLongBreakIntervalLocal(value);
+      setLongBreakInterval(value as number);
+      setLongBreakIntervalLocal(value as number);
     }
   };
 
