@@ -38,6 +38,8 @@ export default function Navbar() {
     location.reload()
   }
 
+  
+
   return (
     <>
       {/* Navbar utama */}
