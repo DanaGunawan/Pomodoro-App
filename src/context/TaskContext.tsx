@@ -30,7 +30,6 @@ interface TaskContextType {
   totalPomodoros: number;
 }
 
-// Define the shape of a task row as returned from Supabase
 interface DatabaseTaskRow {
   id: string;
   name: string;
@@ -94,24 +93,42 @@ export const TaskProvider = ({ children }: { children: React.ReactNode }) => {
     setTotalPomodoros(found?.total_pomodoro_sessions ?? 0);
   };
 
+  const fetchAll = async () => {
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user;
+    if (!user) {
+      setUserId(null);
+      setTasks([]);
+      setTotalPomodoros(0);
+      return;
+    }
+
+    setUserId(user.id);
+    await loadTasksAndStats(user.id);
+    await recalculateTotalPomodoros(user.id);
+  };
+
   useEffect(() => {
-    const fetchAll = async () => {
-      const { data: userData } = await supabase.auth.getUser();
-      const user = userData?.user;
-      if (!user) {
-        console.warn("User not logged in");
+    fetchAll(); // initial load
+  }, []);
+
+  // ✅ Tambahan penting agar saat login logout data terupdate
+  useEffect(() => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user?.id) {
+        setUserId(session.user.id);
+        loadTasksAndStats(session.user.id);
+        recalculateTotalPomodoros(session.user.id);
+      } else {
         setUserId(null);
         setTasks([]);
         setTotalPomodoros(0);
-        return;
       }
+    });
 
-      setUserId(user.id);
-      await loadTasksAndStats(user.id);
-      await recalculateTotalPomodoros(user.id);
+    return () => {
+      listener?.subscription.unsubscribe();
     };
-
-    fetchAll();
   }, []);
 
   useEffect(() => {

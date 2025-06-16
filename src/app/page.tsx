@@ -5,6 +5,7 @@ import { useTasks } from "@/context/TaskContext";
 import { supabase } from "@/lib/supabase";
 import { Play, Pause, RotateCcw, SkipForward, Plus } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 
 interface TaskSession {
   task_id: string;
@@ -28,48 +29,53 @@ export default function HomePage() {
   } = useTimer();
 
   const { tasks, addTask, updateTask, setTasks } = useTasks();
+  const router = useRouter();
 
   const [newTask, setNewTask] = useState("");
   const [totalSessionsCount, setTotalSessionsCount] = useState(0);
   const [taskSessions, setTaskSessions] = useState<
     Record<string, { total_sessions: number }>
   >({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [, setUserId] = useState<string | null>(null);
 
   const startAlarmRef = useRef<HTMLAudioElement | null>(null);
   const endAlarmRef = useRef<HTMLAudioElement | null>(null);
   const skipCalledRef = useRef(false);
 
-  const fetchSessionsData = async () => {
+  const fetchInitialData = async () => {
+    setIsLoading(true);
+
     const {
       data: { user },
       error: userError,
     } = await supabase.auth.getUser();
 
     if (userError || !user) {
-      console.error("Gagal mengambil user:", userError?.message);
+      router.push("/login");
       return;
     }
 
-    const userId = user.id;
+    setUserId(user.id);
 
-    const { data, error } = await supabase.rpc("get_total_pomodoros_per_user", {
-      p_user_id: userId,
-    });
+    try {
+      const { data: totalPomodoroData, error: sessionError } = await supabase.rpc(
+        "get_total_pomodoros_per_user",
+        { p_user_id: user.id }
+      );
 
-    if (error) {
-      console.error("Gagal mengambil total sesi:", error.message);
-    } else if (data?.[0]) {
-      setTotalSessionsCount(data[0].total_all_sessions);
-    }
+      if (sessionError) throw new Error(sessionError.message);
+      if (totalPomodoroData?.[0]) {
+        setTotalSessionsCount(totalPomodoroData[0].total_all_sessions);
+      }
 
-    const { data: taskData, error: taskErr } = await supabase.rpc(
-      "get_task_sessions",
-      { p_user_id: userId }
-    );
+      const { data: taskData, error: taskErr } = await supabase.rpc(
+        "get_task_sessions",
+        { p_user_id: user.id }
+      );
 
-    if (taskErr) {
-      console.error("Gagal mengambil task sessions:", taskErr.message);
-    } else {
+      if (taskErr) throw new Error(taskErr.message);
+
       const taskSessionMap: Record<string, { total_sessions: number }> = {};
       (taskData as TaskSession[]).forEach((item) => {
         taskSessionMap[item.task_id] = {
@@ -77,11 +83,18 @@ export default function HomePage() {
         };
       });
       setTaskSessions(taskSessionMap);
+    } catch (err) {
+      console.error("Error fetching data:", err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchSessionsData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    fetchInitialData();
+
   }, []);
 
   useEffect(() => {
@@ -102,25 +115,25 @@ export default function HomePage() {
 
       skipCalledRef.current = true;
 
-      alarm.play().catch((err) => {
-        console.error("End alarm error:", err);
-        handleEndSession();
-      });
-
       const handleEndSession = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
         if (!user) return;
 
         const start = new Date(Date.now() - durations[sessionType] * 1000);
         const end = new Date();
 
-        const { error: insertError } = await supabase.from("pomodoro_sessions").insert({
-          user_id: user.id,
-          task_id: activeTask.id,
-          type: sessionType,
-          start_time: start.toISOString(),
-          end_time: end.toISOString(),
-        });
+        const { error: insertError } = await supabase
+          .from("pomodoro_sessions")
+          .insert({
+            user_id: user.id,
+            task_id: activeTask.id,
+            type: sessionType,
+            start_time: start.toISOString(),
+            end_time: end.toISOString(),
+          });
 
         if (insertError) {
           console.error("Gagal menyimpan sesi:", insertError.message);
@@ -131,7 +144,7 @@ export default function HomePage() {
           completedPomodoros: activeTask.completedPomodoros + 1,
         };
         await updateTask(updated);
-        await fetchSessionsData();
+        await fetchInitialData();
         skipSession();
         skipCalledRef.current = false;
       };
@@ -142,6 +155,10 @@ export default function HomePage() {
       };
 
       alarm.addEventListener("ended", onEnded);
+      alarm.play().catch((err) => {
+        console.error("End alarm error:", err);
+        handleEndSession();
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeLeft, isRunning, sessionType]);
@@ -194,12 +211,19 @@ export default function HomePage() {
     startTimer();
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen text-white">
+        <p>⏳ Loading data...</p>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`glass mt-10 p-8 text-center bg-gradient-to-br ${getBackground()} transition-all duration-700 rounded-xl`}
     >
       <h1 className="text-3xl font-bold mb-2">⏱ Pomodoro Timer</h1>
-
       <p className="text-sm text-gray-200 mb-4">
         Current:{" "}
         <strong>
