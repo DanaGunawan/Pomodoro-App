@@ -1,12 +1,25 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 
 export interface Task {
   id?: string;
   name: string;
   completedPomodoros: number;
+  totalSessions?: number;
+  focusCount?: number;
+  shortBreakCount?: number;
+  longBreakCount?: number;
+}
+
+interface TaskStats {
+  task_id: string;
+  task_name: string;
+  total_sessions: number;
+  focus_count: number;
+  short_break_count: number;
+  long_break_count: number;
 }
 
 interface Durations {
@@ -26,7 +39,6 @@ interface TimerContextType {
   focusCount: number;
   setSessionType: (type: "focus" | "short_break" | "long_break") => void;
   tasks: Task[];
-  addTask: (task: Task) => Promise<void>;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   setTimeLeft: (time: number) => void;
   durations: Durations;
@@ -47,12 +59,15 @@ export const TimerProvider = ({ children }: { children: React.ReactNode }) => {
   const [sessionType, setSessionType] = useState<"focus" | "short_break" | "long_break">("focus");
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [endTime, setEndTime] = useState<Date | null>(null);
-  const [focusCount, setFocusCount] = useState(0);
+  const [combinedSessionCount] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [longBreakInterval, setLongBreakInterval] = useState(4);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [sessionChanged, setSessionChanged] = useState(false);
+  const hasSavedSession = useRef(false);
 
-  const [durations, setDurations] = useState({
+  const [durations, setDurations] = useState<Durations>({
     focus: FOCUS_DEFAULT,
     short_break: SHORT_BREAK_DEFAULT,
     long_break: LONG_BREAK_DEFAULT,
@@ -71,15 +86,12 @@ export const TimerProvider = ({ children }: { children: React.ReactNode }) => {
         .single();
 
       if (settingsRes.data) {
-        const { focus_duration, short_break_duration, long_break_duration, long_break_interval } =
-          settingsRes.data;
-
+        const { focus_duration, short_break_duration, long_break_duration, long_break_interval } = settingsRes.data;
         setDurations({
           focus: focus_duration,
           short_break: short_break_duration,
           long_break: long_break_duration,
         });
-
         setTimeLeft(focus_duration);
         setLongBreakInterval(long_break_interval || 4);
       }
@@ -95,56 +107,48 @@ export const TimerProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       if (user) {
-        const { data: taskData } = await supabase
-          .from("tasks")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: true });
-
-        if (taskData) {
+        const { data: taskStats } = await supabase.rpc("get_task_sessions", { p_user_id: user.id });
+        if (taskStats) {
           setTasks(
-            taskData.map((t) => ({
-              id: t.id,
-              name: t.name,
-              completedPomodoros: t.completed_pomodoros,
+            (taskStats as TaskStats[]).map((t) => ({
+              id: t.task_id,
+              name: t.task_name,
+              completedPomodoros: t.focus_count ?? 0,
+              totalSessions: t.total_sessions ?? 0,
+              focusCount: t.focus_count ?? 0,
+              shortBreakCount: t.short_break_count ?? 0,
+              longBreakCount: t.long_break_count ?? 0,
             }))
           );
         }
       }
+
+      setIsInitialized(true);
     };
 
     restoreState();
   }, []);
 
   useEffect(() => {
+    if (!isInitialized) return;
     localStorage.setItem(
       "pomodoro_state",
       JSON.stringify({ timeLeft, isRunning, sessionType, startTime, endTime })
     );
-  }, [timeLeft, isRunning, sessionType, startTime, endTime]);
+  }, [timeLeft, isRunning, sessionType, startTime, endTime, isInitialized]);
 
   useEffect(() => {
-    document.title = `${formatTime(timeLeft)} | ${getTitleIcon(sessionType)} ${capitalize(
-      sessionType.replace("_", " ")
-    )}`;
-  }, [timeLeft, sessionType]);
+    if (!isInitialized) return;
+    document.title = `${formatTime(timeLeft)} | ${getTitleIcon(sessionType)} ${capitalize(sessionType.replace("_", " "))}`;
+  }, [timeLeft, sessionType, isInitialized]);
 
-  const formatTime = (t: number) => {
-    const m = Math.floor(t / 60).toString().padStart(2, "0");
-    const s = (t % 60).toString().padStart(2, "0");
-    return `${m}:${s}`;
-  };
-
-  const getTitleIcon = (type: TimerContextType["sessionType"]) => {
-    if (type === "focus") return "🧠";
-    if (type === "short_break") return "☕";
-    if (type === "long_break") return "💤";
-    return "⏱";
-  };
-
+  const formatTime = (t: number) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+  const getTitleIcon = (type: TimerContextType["sessionType"]) =>
+    type === "focus" ? "🧠" : type === "short_break" ? "☕" : "🛌";
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
   useEffect(() => {
+    if (!isInitialized) return;
     let interval: NodeJS.Timeout;
     if (isRunning) {
       interval = setInterval(() => {
@@ -152,25 +156,6 @@ export const TimerProvider = ({ children }: { children: React.ReactNode }) => {
           if (prev <= 1) {
             setIsRunning(false);
             setEndTime(new Date());
-
-            if (sessionType === "focus" && tasks.length > 0) {
-              const activeTask = tasks[0];
-              const updatedPomodoros = activeTask.completedPomodoros + 1;
-
-              if (userId && activeTask.id) {
-                supabase
-                  .from("tasks")
-                  .update({ completed_pomodoros: updatedPomodoros })
-                  .eq("id", activeTask.id);
-              }
-
-              setTasks((prevTasks) => {
-                const updated = [...prevTasks];
-                updated[0].completedPomodoros = updatedPomodoros;
-                return updated;
-              });
-            }
-
             return 0;
           }
           return prev - 1;
@@ -178,46 +163,33 @@ export const TimerProvider = ({ children }: { children: React.ReactNode }) => {
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [isRunning, sessionType, tasks, userId]);
+  }, [isRunning, sessionType, tasks, userId, isInitialized]);
 
- useEffect(() => {
-  const save = async () => {
-    if (startTime && endTime && userId) {
-      await supabase.from("pomodoro_sessions").insert({
-        user_id: userId,
-        start_time: startTime.toISOString(),
-        end_time: endTime.toISOString(),
-        type: sessionType,
-      });
+  useEffect(() => {
+    if (!isInitialized || !endTime || hasSavedSession.current) return;
 
-      const nextSession =
-        sessionType === "focus"
-          ? (focusCount + 1) % longBreakInterval === 0
-            ? "long_break"
-            : "short_break"
-          : "focus";
+    hasSavedSession.current = true;
 
-      if (sessionType === "focus") {
-        setFocusCount((count) => count + 1);
-      }
 
-      setSessionType(nextSession);
-      setTimeLeft(durations[nextSession]);
-      setStartTime(null);
-      setEndTime(null);
-      localStorage.removeItem("pomodoro_state");
-    }
-  };
 
-  if (endTime) {
-    save();
-  }
-}, [endTime, startTime, userId, sessionType, focusCount, longBreakInterval, durations]);
+  }, [
+    endTime,
+    startTime,
+    sessionType,
+    durations,
+    combinedSessionCount,
+    longBreakInterval,
+    tasks,
+    userId,
+    isInitialized,
+  ]);
 
   const startTimer = () => {
     if (!isRunning) {
+      if (sessionChanged) setSessionChanged(false);
       setIsRunning(true);
       if (!startTime) setStartTime(new Date());
+      hasSavedSession.current = false;
     }
   };
 
@@ -228,29 +200,20 @@ export const TimerProvider = ({ children }: { children: React.ReactNode }) => {
     setTimeLeft(durations[sessionType]);
     setStartTime(null);
     setEndTime(null);
+    hasSavedSession.current = false;
   };
 
   const skipSession = () => {
     setEndTime(new Date());
     setIsRunning(false);
+    hasSavedSession.current = false;
   };
 
-  const addTask = async (task: Task) => {
-    if (!userId) return;
-    const { data } = await supabase
-      .from("tasks")
-      .insert([{ user_id: userId, name: task.name, completed_pomodoros: task.completedPomodoros }])
-      .select();
 
-    if (data && data.length > 0) {
-      const newTask = {
-        id: data[0].id,
-        name: data[0].name,
-        completedPomodoros: data[0].completed_pomodoros,
-      };
-      setTasks((prev) => [...prev, newTask]);
-    }
-  };
+
+  if (!isInitialized) {
+    return <div className="text-center mt-20 text-gray-500">Loading settings...</div>;
+  }
 
   return (
     <TimerContext.Provider
@@ -262,10 +225,9 @@ export const TimerProvider = ({ children }: { children: React.ReactNode }) => {
         pauseTimer,
         resetTimer,
         skipSession,
-        focusCount,
+        focusCount: combinedSessionCount,
         setSessionType,
         tasks,
-        addTask,
         setTasks,
         setTimeLeft,
         durations,

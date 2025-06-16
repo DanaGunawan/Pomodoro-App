@@ -8,8 +8,6 @@ interface Props {
   onClose: () => void;
 }
 
-type SettingValue = boolean | number;
-
 export default function SettingsForm({ onClose }: Props) {
   const [focusDuration, setFocusDuration] = useState(25);
   const [shortBreak, setShortBreak] = useState(5);
@@ -21,7 +19,6 @@ export default function SettingsForm({ onClose }: Props) {
 
   const {
     setDurations,
-    durations,
     sessionType,
     setTimeLeft,
     setLongBreakInterval,
@@ -50,60 +47,38 @@ export default function SettingsForm({ onClose }: Props) {
         setLongBreakIntervalLocal(data.long_break_interval || 4);
         setAutoStartBreak(data.auto_start_break || false);
         setAutoStartPomodoro(data.auto_start_pomodoro || false);
-
-        setDurations({
-          focus: focus * 60,
-          short_break: short * 60,
-          long_break: long * 60,
-        });
-
-        if (sessionType === "focus") setTimeLeft(focus * 60);
-        else if (sessionType === "short_break") setTimeLeft(short * 60);
-        else if (sessionType === "long_break") setTimeLeft(long * 60);
-
-        setLongBreakInterval(data.long_break_interval || 4);
       }
     };
     loadSettings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleChangeDuration = async (
-    type: "focus_duration" | "short_break_duration" | "long_break_duration",
-    value: number
-  ) => {
+  const handleSave = async () => {
     if (!userId) return;
 
-    await supabase.from("user_settings").update({ [type]: value * 60 }).eq("id", userId);
-
-    const updatedDurations = {
-      ...durations,
-      [type === "focus_duration"
-        ? "focus"
-        : type === "short_break_duration"
-        ? "short_break"
-        : "long_break"]: value * 60,
+    const updates = {
+      focus_duration: focusDuration * 60,
+      short_break_duration: shortBreak * 60,
+      long_break_duration: longBreak * 60,
+      long_break_interval: longBreakInterval,
+      auto_start_break: autoStartBreak,
+      auto_start_pomodoro: autoStartPomodoro,
     };
 
-    setDurations(updatedDurations);
+    await supabase.from("user_settings").upsert({ id: userId, ...updates });
 
-    if (
-      (type === "focus_duration" && sessionType === "focus") ||
-      (type === "short_break_duration" && sessionType === "short_break") ||
-      (type === "long_break_duration" && sessionType === "long_break")
-    ) {
-      setTimeLeft(value * 60);
-    }
-  };
+    setDurations({
+      focus: focusDuration * 60,
+      short_break: shortBreak * 60,
+      long_break: longBreak * 60,
+    });
 
-  const handleChangeOther = async (field: string, value: SettingValue) => {
-    if (!userId) return;
-    await supabase.from("user_settings").update({ [field]: value }).eq("id", userId);
+    if (sessionType === "focus") setTimeLeft(focusDuration * 60);
+    else if (sessionType === "short_break") setTimeLeft(shortBreak * 60);
+    else if (sessionType === "long_break") setTimeLeft(longBreak * 60);
 
-    if (field === "long_break_interval") {
-      setLongBreakInterval(value as number);
-      setLongBreakIntervalLocal(value as number);
-    }
+    setLongBreakInterval(longBreakInterval);
+
+    onClose();
   };
 
   return (
@@ -117,11 +92,7 @@ export default function SettingsForm({ onClose }: Props) {
             type="number"
             min={1}
             value={focusDuration}
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              setFocusDuration(val);
-              handleChangeDuration("focus_duration", val);
-            }}
+            onChange={(e) => setFocusDuration(Number(e.target.value))}
             className="w-full p-2 rounded bg-gray-100 dark:bg-gray-800 border dark:border-gray-700"
           />
         </div>
@@ -131,11 +102,7 @@ export default function SettingsForm({ onClose }: Props) {
             type="number"
             min={1}
             value={shortBreak}
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              setShortBreak(val);
-              handleChangeDuration("short_break_duration", val);
-            }}
+            onChange={(e) => setShortBreak(Number(e.target.value))}
             className="w-full p-2 rounded bg-gray-100 dark:bg-gray-800 border dark:border-gray-700"
           />
         </div>
@@ -145,11 +112,7 @@ export default function SettingsForm({ onClose }: Props) {
             type="number"
             min={1}
             value={longBreak}
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              setLongBreak(val);
-              handleChangeDuration("long_break_duration", val);
-            }}
+            onChange={(e) => setLongBreak(Number(e.target.value))}
             className="w-full p-2 rounded bg-gray-100 dark:bg-gray-800 border dark:border-gray-700"
           />
         </div>
@@ -160,11 +123,7 @@ export default function SettingsForm({ onClose }: Props) {
         <input
           type="checkbox"
           checked={autoStartBreak}
-          onChange={() => {
-            const val = !autoStartBreak;
-            setAutoStartBreak(val);
-            handleChangeOther("auto_start_break", val);
-          }}
+          onChange={() => setAutoStartBreak(!autoStartBreak)}
         />
       </div>
 
@@ -173,25 +132,17 @@ export default function SettingsForm({ onClose }: Props) {
         <input
           type="checkbox"
           checked={autoStartPomodoro}
-          onChange={() => {
-            const val = !autoStartPomodoro;
-            setAutoStartPomodoro(val);
-            handleChangeOther("auto_start_pomodoro", val);
-          }}
+          onChange={() => setAutoStartPomodoro(!autoStartPomodoro)}
         />
       </div>
 
       <div className="mb-4">
-        <label className="block text-sm mb-1">Long Break Interval</label>
+        <label className="block text-sm mb-1">Long Break Interval (Setiap X sesi fokus)</label>
         <input
           type="number"
           min={1}
           value={longBreakInterval}
-          onChange={(e) => {
-            const val = Number(e.target.value);
-            setLongBreakIntervalLocal(val);
-            handleChangeOther("long_break_interval", val);
-          }}
+          onChange={(e) => setLongBreakIntervalLocal(Number(e.target.value))}
           className="w-full p-2 rounded bg-gray-100 dark:bg-gray-800 border dark:border-gray-700"
         />
       </div>
@@ -201,7 +152,7 @@ export default function SettingsForm({ onClose }: Props) {
 
       <div className="flex justify-end mt-4">
         <button
-          onClick={onClose}
+          onClick={handleSave}
           className="bg-blue-900 text-white hover:bg-blue-800 px-4 py-2 rounded-lg shadow-md transition-colors duration-200"
         >
           Save

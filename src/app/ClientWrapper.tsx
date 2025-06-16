@@ -1,7 +1,14 @@
-'use client'
+"use client";
 
-import { TimerProvider } from '@/context/TimerContext'
+import { TimerProvider } from "@/context/TimerContext";
+import { TaskProvider } from "@/context/TaskContext";
 
 export default function ClientWrapper({ children }: { children: React.ReactNode }) {
-  return <TimerProvider>{children}</TimerProvider>
+  return (
+    <TaskProvider>
+      <TimerProvider>
+        {children}
+      </TimerProvider>
+    </TaskProvider>
+  );
 }
